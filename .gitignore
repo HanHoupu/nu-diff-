@@ -1,0 +1,7 @@
+# ingore all clean data files
+clean data/
+# ignore all raw data files
+ENSDF-*
+
+ENSDF-*/
+# all ignored files are too big to be uploaded to GitHub
