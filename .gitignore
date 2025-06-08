@@ -4,4 +4,4 @@ clean data/
 ENSDF-*
 
 ENSDF-*/
-# all ignored files are too big to be uploaded to GitHub
+# all ignored files are too big to be uploaded to GitHubgit push origin main --force
