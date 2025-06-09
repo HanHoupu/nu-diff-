@@ -7,3 +7,4 @@ ENSDF-*/
 *.feather
 # ignore all output data files
 /src/outputs/
+/.VSCodeCounter
