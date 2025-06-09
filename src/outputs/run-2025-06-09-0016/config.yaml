@@ -1,0 +1,18 @@
+# ─── 模型与 LoRA ──────────────────────────
+backbone_name: "mlp"       # 
+rank: 8
+alpha: 16
+fisher_l2: 1e-4
+train_backbone_first_year: true      # 2004 年解冻主干，其余年份冻结
+
+# ─── 数据与训练 ──────────────────────────
+feather_paths:
+  - levels.feather
+  - gammas.feather
+  - q.feather
+target_col: q_value_keV
+batch_size: 256
+max_epochs: 2
+lr: 1e-4
+early_stop_patience: 1
+seed: 42

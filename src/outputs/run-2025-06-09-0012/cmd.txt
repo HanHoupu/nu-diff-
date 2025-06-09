@@ -1,0 +1,1 @@
+D:\VS CODE W\src\nucdiff\train.py --year 2004 --cfg configs\default.yaml
