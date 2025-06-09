@@ -9,6 +9,7 @@ class QRecord:
     q_value_keV: Optional[float] = None
     mass_excess_keV: Optional[float] = None
     source: Optional[str] = None
+    dataset_year: Optional[int] = None
 
 @dataclass
 class LRecord:
@@ -18,6 +19,7 @@ class LRecord:
     half_life: str                      # 寿命（原文字符串，先不换算）
     extras: Dict[str, Any] = field(default_factory=dict)  # 杂项键（%P, XREF …）
     source: Optional[str] = None
+    dataset_year: Optional[int] = None
 
 @dataclass
 class GRecord:
@@ -37,3 +39,4 @@ class GRecord:
 
     extras: Dict[str, Any] = field(default_factory=dict)  # 其余键 (FLAG, FL raw…)
     source: Optional[str] = None
+    dataset_year: Optional[int] = None

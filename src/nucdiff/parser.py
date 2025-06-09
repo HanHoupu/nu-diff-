@@ -1,108 +1,86 @@
-# parser_lgq.py
-# ——————————————————————————————————————
-# 读 ENSDF  → 产出 QRecord / LRecord / GRecord
-# 把 records.py 放在同目录即可 import
-
-# ── 1. 依赖与记录类型 ─────────────────────
 import re
 from pathlib import Path
 from typing import List, Dict, Iterator
-from records import QRecord, LRecord, GRecord           # ← 你的 dataclass 文件
+from records import QRecord, LRecord, GRecord
 
-# ── 2. 通用小工具 ─────────────────────────
 FLOAT = lambda s: float(s.replace('E', 'e')) if s.strip() else None
-KV_RE = re.compile(r'([A-Za-z%]+)\s*=?\s*([-\w.+]+)')   # 抠 "KEY=VAL"
+KV_RE = re.compile(r'([A-Za-z%]+)\s*=?\s*([-\w.+]+)')
+YEAR_RE = re.compile(r'(\d{4})')            # 抓文件名里的 4 位数
 
-# ── 3. 读 Q 文件 ──────────────────────────
+# ---------- Q ----------
 def iter_q_records(fp: Path) -> Iterator[QRecord]:
-    with fp.open('r', encoding='utf-8', errors='ignore') as fin:
-        for ln in fin:
-            if ln[6:8].strip() != 'Q':                  # 只有 Q 行才读
+    year = _year_from_path(fp)
+    with fp.open('r', encoding='utf-8', errors='ignore') as f:
+        for ln in f:
+            if ln[6:8].strip() != 'Q':
                 continue
-            z   = int(ln[0:3])
-            a   = int(ln[3:6])
-            ele = ln[6:9].strip()
-            qv  = FLOAT(ln[9:19])
-            me  = FLOAT(ln[19:29])
-            src = ln[55:].strip() or None
-            yield QRecord(z, a, ele, qv, me, src)
+            z, a = int(ln[:3]), int(ln[3:6])
+            yield QRecord(
+                z, a, ln[6:9].strip(),
+                FLOAT(ln[9:19]), FLOAT(ln[19:29]),
+                ln[55:].strip() or None, year
+            )
 
-# ── 4. 读 L 文件（自动编号）─────────────────
+# ---------- L ----------
 def iter_l_records(fp: Path) -> Iterator[LRecord]:
+    year = _year_from_path(fp)
     buf, idx = [], 0
-
     def flush():
-        nonlocal buf, idx
-        if not buf:
-            return
-        base = buf[0]                                   # L 主行
+        nonlocal idx, buf
+        if not buf: return
         idx += 1
-        en   = FLOAT(base[9:19])
-        jp   = base[21:39].strip()
-        hl   = base[39:55].strip()
-        ex   = {k.upper(): v for l in buf
-                 for k, v in KV_RE.findall(l[55:].replace('$', ' '))}
-        buf.clear()
-        return LRecord(idx, en, jp, hl, extras=ex)
-
+        base = buf[0]
+        rec = LRecord(
+            idx, FLOAT(base[9:19]), base[21:39].strip(), base[39:55].strip(),
+            {k.upper(): v for l in buf for k, v in KV_RE.findall(l[55:].replace('$',' '))},
+            dataset_year=year
+        )
+        buf.clear(); return rec
     for ln in fp.open('r', encoding='utf-8', errors='ignore'):
-        flag = ln[6:8].strip()                          # "L", "L2"…
+        flag = ln[6:8].strip()
         if flag == 'L':
-            rec = flush()
-            if rec:  yield rec
-        if flag.startswith('L'):
-            buf.append(ln)
-    rec = flush()
-    if rec:  yield rec
+            r = flush(); 0 if not r else (yield r)
+        if flag.startswith('L'): buf.append(ln)
+    r = flush(); 0 if not r else (yield r)
 
-# ── 5. 读 G 文件并配对 from_id / to_id ──────
+# ---------- G ----------
 def iter_g_records(fp: Path,
-                   level_idx: Dict[float, int],
+                   level_idx: Dict[float,int],
                    tol: float = 1.0) -> Iterator[GRecord]:
-
-    def match(e):                                       # 能量 → level_id
-        return level_idx.get(round(e / tol) * tol)
-
+    year = _year_from_path(fp)
     buf: List[str] = []
-
+    def match(e): return level_idx.get(round(e/tol)*tol)
     def flush():
-        if not buf:
-            return
+        if not buf: return
         main = buf[0]
-        eg   = FLOAT(main[9:19])
-        inten= main[21:29].strip() or None
-        mul  = main[29:39].strip() or None
-        g    = GRecord(eg, inten, mul)
-
-        for l in buf:                                   # 扫续行
-            tail = l[55:].replace('$', ' ')
-            if m := re.search(r'WIDTHG\s*=?\s*([-\d.E+]+)\s*EV\s*([\d.]*)', tail, re.I):
-                g.width_ev = float(m.group(1))
-                g.width_unc_ev = FLOAT(m.group(2))
-            for key in ('BM1W', 'BE2W'):
-                if m := re.search(fr'{key}\s*=?\s*([-\d.E+]+)', tail, re.I):
-                    setattr(g, key.lower(), float(m.group(1)))
-            for k, v in KV_RE.findall(tail):
-                if k.upper() not in ('WIDTHG', 'BM1W', 'BE2W'):
-                    g.extras[k.upper()] = v
-            if m := re.search(r'FL\s*=\s*([-\d.E+]+)', tail, re.I):
-                g.to_id = match(float(m.group(1)))
-
-        if g.to_id and eg:                              # 能找终点就推起点
-            to_e = next(k for k, v in level_idx.items() if v == g.to_id)
-            g.from_id = match(to_e + eg)
-        if g.from_id is None and eg:                    # 兜底：就近能级
-            g.from_id = match(eg)
-
-        buf.clear()
-        return g
-
+        g = GRecord(FLOAT(main[9:19]), main[21:29].strip() or None,
+                    main[29:39].strip() or None, dataset_year=year)
+        for l in buf:
+            tail = l[55:].replace('$',' ')
+            if m:=re.search(r'WIDTHG\s*=?\s*([-\d.E+]+)\s*EV\s*([\d.]*)', tail, re.I):
+                g.width_ev, g.width_unc_ev = float(m[1]), FLOAT(m[2])
+            for key in ('BM1W','BE2W'):
+                if m:=re.search(fr'{key}\s*=?\s*([-\d.E+]+)', tail, re.I):
+                    setattr(g, key.lower(), float(m[1]))
+            for k,v in KV_RE.findall(tail):
+                if k.upper() not in ('WIDTHG','BM1W','BE2W'):
+                    g.extras[k.upper()]=v
+            if m:=re.search(r'FL\s*=\s*([-\d.E+]+)', tail, re.I):
+                g.to_id = match(float(m[1]))
+        if g.to_id and g.e_gamma_keV:
+            to_e = next(k for k,v in level_idx.items() if v==g.to_id)
+            g.from_id = match(to_e + g.e_gamma_keV)
+        if g.from_id is None and g.e_gamma_keV:
+            g.from_id = match(g.e_gamma_keV)
+        buf.clear(); return g
     for ln in fp.open('r', encoding='utf-8', errors='ignore'):
-        flag = ln[6:8].strip()                          # "G", "G2"…
+        flag = ln[6:8].strip()
         if flag == 'G':
-            rec = flush()
-            if rec: yield rec
-        if flag.startswith('G'):
-            buf.append(ln)
-    rec = flush()
-    if rec: yield rec
+            r = flush(); 0 if not r else (yield r)
+        if flag.startswith('G'): buf.append(ln)
+    r = flush(); 0 if not r else (yield r)
+
+# ---------- 辅助 ----------
+def _year_from_path(fp: Path) -> int | None:
+    m = YEAR_RE.search(fp.stem)
+    return int(m.group(1)) if m else None
