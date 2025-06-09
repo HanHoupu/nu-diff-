@@ -1,8 +1,9 @@
 # ENSDF Data Prep
 
-data resourse: https://www.nndc.bnl.gov/ensdfarchivals/
-
-Plan to create a tiny data-prep tool that pulls Q, L and G records from ENSDF files.
+This repository provides small utilities for working with
+[ENSDF](https://www.nndc.bnl.gov/ensdfarchivals/) data files.
+It can clean the raw dataset, split records by type and convert
+them to Apache Feather format for analysis or machine learning.
 
 ## Requirements
 
@@ -11,20 +12,32 @@ Plan to create a tiny data-prep tool that pulls Q, L and G records from ENSDF fi
 
 ## Basic Usage
 
-Clean an ENSDF file to keep only Q/L/G records:
+1. **Clean a raw ENSDF file to keep only Q/L/G records**
+
+   ```bash
+   python clean.py raw.ens cleaned.ens
+   ```
+
+2. **Split the cleaned file into individual record types**
+
+   ```bash
+   python divide.py cleaned.ens
+   ```
+
+3. **Convert the records to Feather format**
+
+   ```bash
+   python -m nucdiff.parse_to_feather <data-directory>
+   ```
+
+Optional: check for missing values in the generated tables
 
 ```bash
-python clean.py raw.ens cleaned.ens
+python check_missing.py
 ```
 
-Split a raw file into separate L/G/Q files:
+The resulting `*.feather` files can then be loaded with pandas for further analysis.
 
-```bash
-python divide.py raw.ens
-```
+## License
 
-Convert the cleaned records to Feather format:
-
-```bash
-python -m nucdiff.parse_to_feather <data-directory>
-```
+This project is licensed under the [MIT License](LICENSE).
