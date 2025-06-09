@@ -5,3 +5,5 @@ ENSDF-*
 ENSDF-*/
 # ignore all feather data files
 *.feather
+# ignore all output data files
+/src/outputs/
