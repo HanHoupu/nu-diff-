@@ -18,7 +18,7 @@ class ENSDFDataset(Dataset):
         arr = df[numeric_cols].fillna(0).to_numpy(dtype=np.float32)
         self.X_num = torch.from_numpy(arr)
         self.numeric_dim = len(numeric_cols)
-        
+
         # —— 2. 类别特征索引
         self.X_elem = torch.tensor(df["element_idx"].to_numpy(), dtype=torch.long)
         self.X_rec  = torch.tensor(df["record_type_idx"].to_numpy(), dtype=torch.long)
@@ -73,6 +73,8 @@ def build_dataset(year: int, cfg: dict):
     # 删掉年份 & 目标列，它们不是输入
     num_cols = [c for c in num_cols if c not in ("dataset_year", "target")]
 
+    numeric_dim = len(num_cols)    
+
     # ─── 5) 划分 train / val（80/20）──────────────────────
     n_cut = int(len(df_all) * cfg.get("train_frac", 0.8))
     df_tr, df_va = df_all.iloc[:n_cut], df_all.iloc[n_cut:]
@@ -80,7 +82,7 @@ def build_dataset(year: int, cfg: dict):
     # ─── 6) 返回 Dataset + 映射字典 ────────────────────────
     train_ds = ENSDFDataset(df_tr, num_cols, elem2idx, rec2idx)
     val_ds   = ENSDFDataset(df_va, num_cols, elem2idx, rec2idx)
-    return train_ds, val_ds, (elem2idx, rec2idx)
+    return train_ds, val_ds, (elem2idx, rec2idx, numeric_dim)
 
 # —— 额外 helper：一行拿到 DataLoader —— 
 def get_loaders(year: int, cfg: dict):

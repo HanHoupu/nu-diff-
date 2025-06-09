@@ -50,7 +50,7 @@ shutil.copy(args.cfg, run_dir / "config.yaml")
 (run_dir / "cmd.txt").write_text(" ".join(sys.argv) + "\n")
 
 # — 构建数据集 & DataLoader —
-train_ds, val_ds, (elem2idx, rec2idx) = build_dataset(args.year, cfg)
+train_ds, val_ds, (elem2idx, rec2idx, numeric_dim) = build_dataset(args.year, cfg)
 train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True)
 val_loader   = DataLoader(val_ds,   batch_size=cfg["batch_size"])
 

@@ -3,7 +3,7 @@ import torch.nn as nn
 from .lora import LoRALayer
 
 # ← 必须与 DataLoader 中自动选出的 numeric_cols 数量保持一致
-NUMERIC_DIM = 7   # Z, A, energy_keV, mass_excess_keV, q_value_keV, e_gamma_keV, intensity
+numeric_dim = 7   # Z, A, energy_keV, mass_excess_keV, q_value_keV, e_gamma_keV, intensity
 
 class IncrementalModel(nn.Module):
     def __init__(
@@ -23,7 +23,7 @@ class IncrementalModel(nn.Module):
 
         # 输入维度 = 数值特征 + 两个 embedding
         self.numeric_dim = numeric_dim
-        in_dim = NUMERIC_DIM + embed_dim * 2
+        in_dim = numeric_dim + embed_dim * 2
 
         # 主干：两层带 LoRA 的 MLP
         self.fc1 = LoRALayer(nn.Linear(in_dim, 128), rank=rank, alpha=alpha)
@@ -42,7 +42,7 @@ class IncrementalModel(nn.Module):
                     p.requires_grad_(True)
 
     def forward(self, batch):
-        # batch["num"]: [B, numeric_dim]
+        # batch["num"]: [B, numeric_dim]    
         # batch["elem"]: [B]; batch["rec"]: [B]
         x_num  = batch["num"]
         x_elem = self.elem_emb(batch["elem"])
