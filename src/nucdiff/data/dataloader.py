@@ -17,7 +17,8 @@ class ENSDFDataset(Dataset):
         # —— 1. 数值特征矩阵 [N, D]，NaN→0
         arr = df[numeric_cols].fillna(0).to_numpy(dtype=np.float32)
         self.X_num = torch.from_numpy(arr)
-
+        self.numeric_dim = len(numeric_cols)
+        
         # —— 2. 类别特征索引
         self.X_elem = torch.tensor(df["element_idx"].to_numpy(), dtype=torch.long)
         self.X_rec  = torch.tensor(df["record_type_idx"].to_numpy(), dtype=torch.long)

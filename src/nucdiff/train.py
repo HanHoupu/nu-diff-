@@ -60,9 +60,10 @@ train_backbone = cfg["train_backbone_first_year"] and args.year == cfg["start_ye
 model = IncrementalModel(
     elem2idx=elem2idx,
     rec2idx=rec2idx,
+    numeric_dim=numeric_dim,
     rank=cfg["rank"],
     alpha=cfg["alpha"],
-    embed_dim=cfg["embed_dim"],     
+    embed_dim=cfg["embed_dim"],    
     train_backbone=train_backbone
 ).to(device)
 

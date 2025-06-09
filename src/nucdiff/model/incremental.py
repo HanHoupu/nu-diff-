@@ -10,6 +10,7 @@ class IncrementalModel(nn.Module):
         self,
         elem2idx: dict,
         rec2idx: dict,
+        numeric_dim: int,
         embed_dim: int = 8,
         rank: int = 8,
         alpha: int = 16,
@@ -21,6 +22,7 @@ class IncrementalModel(nn.Module):
         self.rec_emb  = nn.Embedding(len(rec2idx),  embed_dim)
 
         # 输入维度 = 数值特征 + 两个 embedding
+        self.numeric_dim = numeric_dim
         in_dim = NUMERIC_DIM + embed_dim * 2
 
         # 主干：两层带 LoRA 的 MLP
@@ -40,7 +42,7 @@ class IncrementalModel(nn.Module):
                     p.requires_grad_(True)
 
     def forward(self, batch):
-        # batch["num"]: [B, NUMERIC_DIM]
+        # batch["num"]: [B, numeric_dim]
         # batch["elem"]: [B]; batch["rec"]: [B]
         x_num  = batch["num"]
         x_elem = self.elem_emb(batch["elem"])
