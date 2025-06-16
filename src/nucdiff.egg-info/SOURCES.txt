@@ -1,0 +1,15 @@
+LICENSE
+README.md
+pyproject.toml
+src/nucdiff/__init__.py
+src/nucdiff/clean.py
+src/nucdiff/parse_to_feather.py
+src/nucdiff/parser.py
+src/nucdiff/records.py
+src/nucdiff/train.py
+src/nucdiff.egg-info/PKG-INFO
+src/nucdiff.egg-info/SOURCES.txt
+src/nucdiff.egg-info/dependency_links.txt
+src/nucdiff.egg-info/top_level.txt
+test/test_dataloader.py
+test/test_model.py

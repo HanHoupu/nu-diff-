@@ -1,0 +1,7 @@
+[project]
+name = "nucdiff"
+version = "0.0.1"
+
+[tool.setuptools]
+package-dir = {"" = "src"}  
+packages = ["nucdiff"]       
