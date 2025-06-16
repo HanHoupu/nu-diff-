@@ -21,6 +21,9 @@ from nucdiff.utils.earlystop import EarlyStopper
 from nucdiff.utils.fisher import fisher_l2_reg
 from nucdiff.utils.evaluate import evaluate_mae
 from nucdiff.data.dataloader import build_dataset
+from nucdiff.model.safety import SafetyCallback 
+
+safety = SafetyCallback(clip_norm=1.0)   
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--year", type=int, required=True)
@@ -90,8 +93,9 @@ for epoch in range(cfg["max_epochs"]):
         # 前向 + 损失
         loss_task = model.training_step((batch_x, batch_y))
         loss_reg = fisher_l2_reg(model, cfg.get("fisher_l2", 0.0))
-        (loss_task + loss_reg).backward()
+        loss_total = loss_task + loss_reg
         optimizer.step()
+        safety(loss_total, model) 
         optimizer.zero_grad()
 
     # 验证
