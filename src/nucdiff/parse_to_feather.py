@@ -10,11 +10,12 @@
     levels.feather   – L 记录
     gammas.feather   – G 记录
 """
+
 import sys, json
 from pathlib import Path
 import pandas as pd
 
-from parser import (           # 
+from parser import (  #
     iter_q_records,
     iter_l_records,
     iter_g_records,
@@ -34,13 +35,15 @@ for fp in root.rglob("*.L"):
     l_records.extend(iter_l_records(fp))
 
 # —— 建立 “能量 → level_id” 索引（四舍五入到 1 keV）
-level_idx = {round(l.energy_keV, 1): l.level_id
-             for l in l_records if l.energy_keV is not None}
+level_idx = {
+    round(l.energy_keV, 1): l.level_id for l in l_records if l.energy_keV is not None
+}
 
 # ---------- 3) 解析 G 文件 ----------
 g_records = []
 for fp in root.rglob("*.G"):
     g_records.extend(iter_g_records(fp, level_idx))
+
 
 # ---------- 4) 转 DataFrame 并保存 Feather ----------
 def to_df(objs):
@@ -49,6 +52,7 @@ def to_df(objs):
     if "extras" in df.columns:
         df["extras"] = df["extras"].apply(json.dumps)
     return df
+
 
 to_df(q_records).to_feather("q.feather")
 to_df(l_records).to_feather("levels.feather")

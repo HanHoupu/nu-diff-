@@ -4,9 +4,9 @@ from pathlib import Path
 
 # ---------- 1. 读取三张表 ----------
 tables = {
-    "levels":  Path("levels.feather"),
-    "gammas":  Path("gammas.feather"),
-    "q":       Path("q.feather"),
+    "levels": Path("levels.feather"),
+    "gammas": Path("gammas.feather"),
+    "q": Path("q.feather"),
 }
 
 dfs = {name: pd.read_feather(path) for name, path in tables.items()}
@@ -27,9 +27,7 @@ for name, df in dfs.items():
             sample_val = df.at[first_idx, col]
             sample_row = df.loc[first_idx].to_dict()
 
-        print(f"\n• {col:>15}  "
-              f"null: {null_cnt:>6}  "
-              f"({null_pct:5.1f}%)")
+        print(f"\n• {col:>15}  " f"null: {null_cnt:>6}  " f"({null_pct:5.1f}%)")
 
         if sample_val is not None:
             print(f"  └ sample value: {sample_val}")

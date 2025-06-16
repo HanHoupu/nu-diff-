@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.4.2          # ← 一定要写具体 tag，不能省
+    hooks:
+      - id: black
+        language_version: python3.11   # 换成你的 Python 版本
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.13        # 记得加 v
+    hooks:
+      - id: ruff-check   # 只做静态检查
+      # - id: ruff-format  # 如果想让 ruff 也负责格式化，就把这一行取消注释

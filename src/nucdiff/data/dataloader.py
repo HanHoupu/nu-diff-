@@ -9,8 +9,9 @@ from torch.utils.data import Dataset
 RECORD_FILES = {
     "L": ("levels.feather", "energy_keV"),
     "G": ("gammas.feather", "e_gamma_keV"),
-    "Q": ("q.feather",    "q_value_keV"),
+    "Q": ("q.feather", "q_value_keV"),
 }
+
 
 class ENSDFDataset(Dataset):
     def __init__(self, df, numeric_cols, elem2idx, rec2idx):
@@ -21,7 +22,7 @@ class ENSDFDataset(Dataset):
 
         # —— 2. 类别特征索引
         self.X_elem = torch.tensor(df["element_idx"].to_numpy(), dtype=torch.long)
-        self.X_rec  = torch.tensor(df["record_type_idx"].to_numpy(), dtype=torch.long)
+        self.X_rec = torch.tensor(df["record_type_idx"].to_numpy(), dtype=torch.long)
 
         # —— 3. 目标值张量
         self.y = torch.tensor(df["target"].to_numpy(), dtype=torch.float32)
@@ -32,12 +33,13 @@ class ENSDFDataset(Dataset):
     def __getitem__(self, idx):
         return (
             {
-                "num":  self.X_num[idx],
+                "num": self.X_num[idx],
                 "elem": self.X_elem[idx],
-                "rec":  self.X_rec[idx],
+                "rec": self.X_rec[idx],
             },
-            self.y[idx]
+            self.y[idx],
         )
+
 
 def build_dataset(year: int, cfg: dict):
     # ─── 1) 依次读取三张表、打上 record_type & target ───────────
@@ -48,7 +50,7 @@ def build_dataset(year: int, cfg: dict):
         df = df[df["dataset_year"] == year].copy()
         # 统一列
         df["record_type"] = rec
-        df["target"]       = df[tcol]
+        df["target"] = df[tcol]
         parts.append(df)
 
     # ─── 2) 合并所有记录 ─────────────────────────────────────
@@ -73,7 +75,7 @@ def build_dataset(year: int, cfg: dict):
     # 删掉年份 & 目标列，它们不是输入
     num_cols = [c for c in num_cols if c not in ("dataset_year", "target")]
 
-    numeric_dim = len(num_cols)    
+    numeric_dim = len(num_cols)
 
     # ─── 5) 划分 train / val（80/20）──────────────────────
     n_cut = int(len(df_all) * cfg.get("train_frac", 0.8))
@@ -81,16 +83,15 @@ def build_dataset(year: int, cfg: dict):
 
     # ─── 6) 返回 Dataset + 映射字典 ────────────────────────
     train_ds = ENSDFDataset(df_tr, num_cols, elem2idx, rec2idx)
-    val_ds   = ENSDFDataset(df_va, num_cols, elem2idx, rec2idx)
+    val_ds = ENSDFDataset(df_va, num_cols, elem2idx, rec2idx)
     return train_ds, val_ds, (elem2idx, rec2idx, numeric_dim)
 
-# —— 额外 helper：一行拿到 DataLoader —— 
+
+# —— 额外 helper：一行拿到 DataLoader ——
 def get_loaders(year: int, cfg: dict):
     train_ds, val_ds, maps = build_dataset(year, cfg)
     train_loader = torch.utils.data.DataLoader(
         train_ds, batch_size=cfg["batch_size"], shuffle=True
     )
-    val_loader = torch.utils.data.DataLoader(
-        val_ds, batch_size=cfg["batch_size"]
-    )
+    val_loader = torch.utils.data.DataLoader(val_ds, batch_size=cfg["batch_size"])
     return train_loader, val_loader, maps

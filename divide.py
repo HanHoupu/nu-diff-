@@ -6,6 +6,7 @@ import sys, pathlib
 
 KEEP = ["L", "G", "Q"]
 
+
 def filter_file(src: pathlib.Path):
 
     out_files = {
@@ -22,6 +23,7 @@ def filter_file(src: pathlib.Path):
 
     for f in out_files.values():
         f.close()
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

@@ -2,9 +2,10 @@ import torch, numpy as np
 
 import torch, numpy as np
 
+
 def evaluate_mae(model, loader):
     model.eval()
-    device = next(model.parameters()).device        # ← 取模型当前设备
+    device = next(model.parameters()).device  # ← 取模型当前设备
     mae_list = []
     with torch.no_grad():
         for x, y in loader:

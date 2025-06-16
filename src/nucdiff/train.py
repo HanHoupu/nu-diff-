@@ -4,6 +4,7 @@
   python -m nucdiff.train --year 2004 --cfg configs/default.yaml
 """
 import pathlib, sys
+
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
@@ -12,17 +13,18 @@ from torch.utils.data import DataLoader
 
 # 新版 DataLoader，L/G/Q 三表合一
 from nucdiff.data.dataloader import get_loaders, build_dataset
+
 # 增量 LoRA 主模型
 from nucdiff.model.incremental import IncrementalModel
-from nucdiff.utils.seed        import set_seed
-from nucdiff.utils.earlystop   import EarlyStopper
-from nucdiff.utils.fisher      import fisher_l2_reg
-from nucdiff.utils.evaluate    import evaluate_mae
-from nucdiff.data.dataloader   import build_dataset
+from nucdiff.utils.seed import set_seed
+from nucdiff.utils.earlystop import EarlyStopper
+from nucdiff.utils.fisher import fisher_l2_reg
+from nucdiff.utils.evaluate import evaluate_mae
+from nucdiff.data.dataloader import build_dataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--year", type=int, required=True)
-parser.add_argument("--cfg",  type=str, default="configs/default.yaml")
+parser.add_argument("--cfg", type=str, default="configs/default.yaml")
 args = parser.parse_args()
 
 # — 读配置 & 固定随机种子 —
@@ -38,7 +40,11 @@ run_dir = PROJECT_ROOT / f"outputs/run-{now}"
 
 # Git commit
 try:
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT).decode().strip()
+    commit = (
+        subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT)
+        .decode()
+        .strip()
+    )
 except subprocess.SubprocessError:
     commit = "no-git-found"
 (run_dir / "commit.txt").write_text(commit + "\n")
@@ -52,7 +58,7 @@ shutil.copy(args.cfg, run_dir / "config.yaml")
 # — 构建数据集 & DataLoader —
 train_ds, val_ds, (elem2idx, rec2idx, numeric_dim) = build_dataset(args.year, cfg)
 train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True)
-val_loader   = DataLoader(val_ds,   batch_size=cfg["batch_size"])
+val_loader = DataLoader(val_ds, batch_size=cfg["batch_size"])
 
 # — 设备 & 模型 —
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -63,14 +69,14 @@ model = IncrementalModel(
     numeric_dim=numeric_dim,
     rank=cfg["rank"],
     alpha=cfg["alpha"],
-    embed_dim=cfg["embed_dim"],    
-    train_backbone=train_backbone
+    embed_dim=cfg["embed_dim"],
+    train_backbone=train_backbone,
 ).to(device)
 
 # — 优化器只更新 LoRA 和 head —
 optimizer = torch.optim.AdamW(
     (p for p in model.parameters() if p.requires_grad),
-    lr=float(cfg["lr"])          # ← 即使 YAML 手滑写成 "1e-4" 也能转
+    lr=float(cfg["lr"]),  # ← 即使 YAML 手滑写成 "1e-4" 也能转
 )
 
 # — 训练循环 —
@@ -83,9 +89,10 @@ for epoch in range(cfg["max_epochs"]):
         batch_y = batch_y.to(device)
         # 前向 + 损失
         loss_task = model.training_step((batch_x, batch_y))
-        loss_reg  = fisher_l2_reg(model, cfg.get("fisher_l2", 0.0))
+        loss_reg = fisher_l2_reg(model, cfg.get("fisher_l2", 0.0))
         (loss_task + loss_reg).backward()
-        optimizer.step(); optimizer.zero_grad()
+        optimizer.step()
+        optimizer.zero_grad()
 
     # 验证
     mae = evaluate_mae(model, val_loader)
