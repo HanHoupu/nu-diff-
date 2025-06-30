@@ -30,6 +30,15 @@ them to Apache Feather format for analysis or machine learning.
    python -m nucdiff.parse_to_feather <data-directory>
    ```
 
+4. **Quick evaluation of saved checkpoints**
+
+   ```bash
+   python -m nucdiff.cli.quick_eval \
+       --ckpt checkpoints/2023.pt \
+       --year 2023 \
+       --cfg configs/default.yaml
+   ```
+
 Optional: check for missing values in the generated tables
 
 ```bash
