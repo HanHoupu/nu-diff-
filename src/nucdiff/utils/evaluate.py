@@ -5,11 +5,11 @@ import torch, numpy as np
 
 def evaluate_mae(model, loader):
     model.eval()
-    device = next(model.parameters()).device  # ← 取模型当前设备
+    device = next(model.parameters()).device  # get model device now
     mae_list = []
     with torch.no_grad():
         for x, y in loader:
-            # 把 batch 全搬到同一设备
+            # move all batch to same device
             x = {k: v.to(device) for k, v in x.items()}
             y = y.to(device)
 

@@ -1,11 +1,11 @@
 """
-确保 dataloader 输出的 numeric 特征维度符合预期
+Make sure the numeric feature dimension output by dataloader is correct
 """
 import numpy as np
 from nucdiff.data.dataloader import build_dataset
 
 def test_numeric_dim():
-    cfg = {"split": "train"}         # 简化示例，用你项目里的 cfg
+    cfg = {"split": "train"}         # simple example, just use the cfg in your project
     ds, _, _ = build_dataset(2004, cfg)
     sample = ds[0][0]                # (batch=0, timestep=0)
     numeric = sample["num"]          # e.g. shape = (7,)
