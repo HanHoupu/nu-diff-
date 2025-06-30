@@ -1,0 +1,2 @@
+tensorboard
+wandb>=0.16 

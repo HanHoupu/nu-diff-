@@ -22,6 +22,7 @@ from nucdiff.utils.fisher import fisher_l2_reg
 from nucdiff.utils.evaluate import evaluate_mae
 from nucdiff.data.dataloader import build_dataset
 from nucdiff.model.safety import SafetyCallback 
+from nucdiff.utils.logger import TrainLogger
 
 safety = SafetyCallback(clip_norm=1.0)   
 
@@ -84,6 +85,9 @@ optimizer = torch.optim.AdamW(
 
 # --- training loop ---
 early_stopper = EarlyStopper(patience=cfg["early_stop_patience"])
+logger = TrainLogger(cfg)
+global_step = 0
+log_every = cfg.get("log_every", 10)
 for epoch in range(cfg["max_epochs"]):
     model.train()
     for batch_x, batch_y in train_loader:
@@ -97,9 +101,13 @@ for epoch in range(cfg["max_epochs"]):
         optimizer.step()
         safety(loss_total, model) 
         optimizer.zero_grad()
-
+        if global_step % log_every == 0:
+            logger.log_scalar("train/loss", loss_task.item() if hasattr(loss_task, 'item') else loss_task, global_step)
+            logger.log_scalar("train/loss_reg", loss_reg.item() if hasattr(loss_reg, 'item') else loss_reg, global_step)
+        global_step += 1
     # validation
     mae = evaluate_mae(model, val_loader)
+    logger.log_scalar("val/mae", mae, global_step)
     print(f"[{args.year}] epoch {epoch} | val MAE = {mae:.4f}")
     if early_stopper.step(mae):
         print("Early stop triggered.")
@@ -110,3 +118,5 @@ torch.save(model.state_dict(), run_dir / "checkpoints" / f"model_{args.year}.pth
 model.save_lora(str(run_dir / "checkpoints" / f"lora_{args.year}.pth"))
 
 print(f"✔ Year {args.year} finished. Artifacts saved to: {run_dir}")
+
+logger.close()

@@ -19,3 +19,8 @@ lr: 1e-4
 early_stop_patience: 1
 seed: 42
 embed_dim: 8
+
+# ─── 日志与监控 ──────────────────────────
+use_wandb: false
+wandb_project: "nucdiff"
+log_every: 10
