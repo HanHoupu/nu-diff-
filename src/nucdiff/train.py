@@ -14,12 +14,12 @@ from torch.utils.data import DataLoader
 # new DataLoader, L/G/Q three tables together
 from nucdiff.data.dataloader import get_loaders, build_dataset
 
-# incremental LoRA main model
-from nucdiff.model.incremental import IncrementalModel
+# Transformer multi-task model
+from nucdiff.model import TransformerModel
 from nucdiff.utils.seed import set_seed
 from nucdiff.utils.earlystop import EarlyStopper
 from nucdiff.utils.fisher import fisher_l2_reg
-from nucdiff.utils.evaluate import evaluate_mae
+from nucdiff.utils.evaluate import evaluate_mae_multi
 from nucdiff.data.dataloader import build_dataset
 from nucdiff.model.safety import SafetyCallback 
 from nucdiff.utils.logger import TrainLogger
@@ -66,16 +66,7 @@ val_loader = DataLoader(val_ds, batch_size=cfg["batch_size"])
 
 # --- device & model ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-train_backbone = cfg["train_backbone_first_year"] and args.year == cfg["start_year"]
-model = IncrementalModel(
-    elem2idx=elem2idx,
-    rec2idx=rec2idx,
-    numeric_dim=numeric_dim,
-    rank=cfg["rank"],
-    alpha=cfg["alpha"],
-    embed_dim=cfg["embed_dim"],
-    train_backbone=train_backbone,
-).to(device)
+model = TransformerModel(cfg, elem2idx, rec2idx).to(device)
 
 # --- optimizer only update LoRA and head ---
 optimizer = torch.optim.AdamW(
@@ -88,12 +79,13 @@ early_stopper = EarlyStopper(patience=cfg["early_stop_patience"])
 logger = TrainLogger(cfg)
 global_step = 0
 log_every = cfg.get("log_every", 10)
+
 for epoch in range(cfg["max_epochs"]):
     model.train()
     for batch_x, batch_y in train_loader:
         # move to device
         batch_x = {k: v.to(device) for k, v in batch_x.items()}
-        batch_y = batch_y.to(device)
+        batch_y = {k: v.to(device) for k, v in batch_y.items()}
         # forward + loss
         loss_task = model.training_step((batch_x, batch_y))
         loss_reg = fisher_l2_reg(model, cfg.get("fisher_l2", 0.0))
@@ -101,15 +93,24 @@ for epoch in range(cfg["max_epochs"]):
         optimizer.step()
         safety(loss_total, model) 
         optimizer.zero_grad()
+        
         if global_step % log_every == 0:
             logger.log_scalar("train/loss", loss_task.item() if hasattr(loss_task, 'item') else loss_task, global_step)
             logger.log_scalar("train/loss_reg", loss_reg.item() if hasattr(loss_reg, 'item') else loss_reg, global_step)
         global_step += 1
+
     # validation
-    mae = evaluate_mae(model, val_loader)
-    logger.log_scalar("val/mae", mae, global_step)
-    print(f"[{args.year}] epoch {epoch} | val MAE = {mae:.4f}")
-    if early_stopper.step(mae):
+    metrics = evaluate_mae_multi(model, val_loader, device)
+    mae_avg = metrics["avg"]
+    print(f"[{args.year}] epoch {epoch} | val MAE = {mae_avg:.4f} (L:{metrics['L']:.4f} G:{metrics['G']:.4f} Q:{metrics['Q']:.4f})")
+    
+    # Log individual task metrics
+    logger.log_scalar("val/mae_L", metrics["L"], epoch)
+    logger.log_scalar("val/mae_G", metrics["G"], epoch)
+    logger.log_scalar("val/mae_Q", metrics["Q"], epoch)
+    logger.log_scalar("val/mae_avg", mae_avg, epoch)
+    
+    if early_stopper.step(mae_avg):
         print("Early stop triggered.")
         break
 
@@ -117,6 +118,5 @@ for epoch in range(cfg["max_epochs"]):
 torch.save(model.state_dict(), run_dir / "checkpoints" / f"model_{args.year}.pth")
 model.save_lora(str(run_dir / "checkpoints" / f"lora_{args.year}.pth"))
 
-print(f"✔ Year {args.year} finished. Artifacts saved to: {run_dir}")
-
 logger.close()
+print(f"✔ Year {args.year} finished. Artifacts saved to: {run_dir}")

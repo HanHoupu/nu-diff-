@@ -24,20 +24,26 @@ class ENSDFDataset(Dataset):
         self.X_elem = torch.tensor(df["element_idx"].to_numpy(), dtype=torch.long)
         self.X_rec = torch.tensor(df["record_type_idx"].to_numpy(), dtype=torch.long)
 
-        # —— 3. 目标值张量
-        self.y = torch.tensor(df["target"].to_numpy(), dtype=torch.float32)
+        # —— 3. 多任务目标值张量
+        self.y_L = torch.tensor(df["target_L"].to_numpy(), dtype=torch.float32)
+        self.y_G = torch.tensor(df["target_G"].to_numpy(), dtype=torch.float32)
+        self.y_Q = torch.tensor(df["target_Q"].to_numpy(), dtype=torch.float32)
 
     def __len__(self):
-        return len(self.y)
+        return len(self.y_L)
 
     def __getitem__(self, idx):
         return (
             {
-                "num": self.X_num[idx],
-                "elem": self.X_elem[idx],
-                "rec": self.X_rec[idx],
+                "numeric": self.X_num[idx],
+                "element": self.X_elem[idx],
+                "record_type": self.X_rec[idx],
             },
-            self.y[idx],
+            {
+                "L": self.y_L[idx],
+                "G": self.y_G[idx],
+                "Q": self.y_Q[idx],
+            }
         )
 
 
@@ -50,7 +56,7 @@ def build_dataset(year: int, cfg: dict):
         df = df[df["dataset_year"] == year].copy()
         # 统一列
         df["record_type"] = rec
-        df["target"] = df[tcol]
+        df[f"target_{rec}"] = df[tcol]
         parts.append(df)
 
     # ─── 2) 合并所有记录 ─────────────────────────────────────
@@ -58,22 +64,26 @@ def build_dataset(year: int, cfg: dict):
 
     # ─── 3) 处理类别特征，确保全是 str → 索引 ────────────────
     # element 列仅在 Q 表有，其它表填 "UNK"
-    df_all["element"] = df_all.get("element", pd.NA).fillna("UNK").astype(str)
+    element_col = df_all.get("element")
+    if element_col is not None:
+        df_all["element"] = element_col.fillna("UNK").astype(str)
+    else:
+        df_all["element"] = "UNK"
     df_all["element"] = df_all["element"].fillna("UNK").astype(str)
     # 建映射：element → idx；sorted 只在同类型 str 间比较，无错误
     elems = sorted(df_all["element"].unique())
     elem2idx = {e: i for i, e in enumerate(elems)}
-    df_all["element_idx"] = df_all["element"].map(elem2idx)
+    df_all["element_idx"] = df_all["element"].map(lambda x: elem2idx[x])
 
     # record_type → idx
     recs = ["L", "G", "Q"]
     rec2idx = {r: i for i, r in enumerate(recs)}
-    df_all["record_type_idx"] = df_all["record_type"].map(rec2idx)
+    df_all["record_type_idx"] = df_all["record_type"].map(lambda x: rec2idx[x])
 
     # ─── 4) 自动挑出所有数值列，去掉不当特征 ────────────────
     num_cols = df_all.select_dtypes(include=[np.number]).columns.tolist()
     # 删掉年份 & 目标列，它们不是输入
-    num_cols = [c for c in num_cols if c not in ("dataset_year", "target")]
+    num_cols = [c for c in num_cols if c not in ("dataset_year", "target_L", "target_G", "target_Q")]
 
     numeric_dim = len(num_cols)
 

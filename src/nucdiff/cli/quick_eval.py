@@ -12,8 +12,8 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
 from nucdiff.data.dataloader import build_dataset
-from nucdiff.model.incremental import IncrementalModel
-from nucdiff.utils.evaluate import evaluate_mae, evaluate_rmse, evaluate_r2
+from nucdiff.model import TransformerModel
+from nucdiff.utils.evaluate import evaluate_mae_multi, evaluate_rmse, evaluate_r2
 
 def main():
     parser = argparse.ArgumentParser()
@@ -45,16 +45,7 @@ def main():
     
     # Initialize model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_backbone = cfg["train_backbone_first_year"] and args.year == cfg["start_year"]
-    model = IncrementalModel(
-        elem2idx=elem2idx,
-        rec2idx=rec2idx,
-        numeric_dim=numeric_dim,
-        rank=cfg["rank"],
-        alpha=cfg["alpha"],
-        embed_dim=cfg["embed_dim"],
-        train_backbone=train_backbone,
-    ).to(device)
+    model = TransformerModel(cfg, elem2idx, rec2idx).to(device)
     
     # Load checkpoint
     try:
@@ -66,15 +57,17 @@ def main():
     
     # Evaluate
     try:
-        mae = evaluate_mae(model, val_loader, device)
-        rmse = evaluate_rmse(model, val_loader, device)
-        r2 = evaluate_r2(model, val_loader, device)
+        mae_metrics = evaluate_mae_multi(model, val_loader, device)
+        mae_avg = mae_metrics["avg"]
+        mae_L = mae_metrics["L"]
+        mae_G = mae_metrics["G"]
+        mae_Q = mae_metrics["Q"]
     except Exception as e:
         print(f"Error during evaluation: {e}")
         sys.exit(1)
     
     # Print results
-    print(f"{args.ckpt} | MAE={mae:.4f}  RMSE={rmse:.4f}  R²={r2:.4f}")
+    print(f"{args.ckpt} | MAE_avg={mae_avg:.4f} (L:{mae_L:.4f} G:{mae_G:.4f} Q:{mae_Q:.4f})")
     
     # Save to CSV
     logs_dir = PROJECT_ROOT / "logs"
@@ -82,13 +75,13 @@ def main():
     csv_path = logs_dir / "metrics.csv"
     
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    row = [timestamp, args.ckpt, args.year, f"{mae:.4f}", f"{rmse:.4f}", f"{r2:.4f}"]
+    row = [timestamp, args.ckpt, args.year, f"{mae_L:.4f}", f"{mae_G:.4f}", f"{mae_Q:.4f}", f"{mae_avg:.4f}"]
     
     # Write CSV header if file doesn't exist
     if not csv_path.exists():
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["timestamp", "checkpoint", "year", "mae", "rmse", "r2"])
+            writer.writerow(["timestamp", "checkpoint", "year", "mae_L", "mae_G", "mae_Q", "mae_avg"])
     
     # Append results
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
