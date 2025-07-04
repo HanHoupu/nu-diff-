@@ -71,7 +71,7 @@ model = TransformerModel(cfg, elem2idx, rec2idx).to(device)
 # --- optimizer only update LoRA and head ---
 optimizer = torch.optim.AdamW(
     (p for p in model.parameters() if p.requires_grad),
-    lr=float(cfg["lr"]),  # ← 即使 YAML 手滑写成 "1e-4" 也能转
+    lr=float(cfg["lr"]),  # even if YAML is written as "1e-4" it will be converted
 )
 
 # --- training loop ---

@@ -1,12 +1,12 @@
-# parser.py  —  split + regex 解析 ENSDF（Q / L / G）
+# parser.py  --  split + regex parse ENSDF (Q / L / G)
 import re
 from pathlib import Path
 from typing import List, Dict, Iterator, Optional
 from records import QRecord, LRecord, GRecord
 
-# ---------------- 共用工具 -----------------
-NUM_RE = re.compile(r"[+\-]?\d+(?:\.\d+)?(?:[Ee][+\-]?\d+)?")  # 抓浮点/科学计数
-KV_RE = re.compile(r"([A-Za-z%]+)\s*=?\s*([-\w.+]+)")  # 抓 KEY=VAL
+# ---------------- common tools -----------------
+NUM_RE = re.compile(r"[+\-]?\d+(?:\.\d+)?(?:[Ee][+\-]?\d+)?")  # match float/scientific
+KV_RE = re.compile(r"([A-Za-z%]+)\s*=?\s*([\-\w.+]+)")  # match KEY=VAL
 YEAR_RE = re.compile(r"(\d{4})")
 
 

@@ -1,14 +1,14 @@
 """
-解析指定目录下的 *.Q.ens / *.L.ens / *.G.ens
-并各自保存为 Feather 文件
+Parse *.Q.ens / *.L.ens / *.G.ens in the specified directory
+and save each as a Feather file
 ----------------------------------------------
-用法：
-    python parse_to_feather.py <数据目录>
-    # 如果不写参数，就默认为当前目录
-生成：
-    q.feather        – Q 记录
-    levels.feather   – L 记录
-    gammas.feather   – G 记录
+Usage:
+    python parse_to_feather.py <data directory>
+    # If no argument is given, use current directory by default
+Output:
+    q.feather        – Q records
+    levels.feather   – L records
+    gammas.feather   – G records
 """
 
 import sys, json
@@ -21,33 +21,33 @@ from parser import (  #
     iter_g_records,
 )
 
-# ---------- 选择数据根目录 ----------
+# ---------- select data root directory ----------
 root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
 
-# ---------- 1) 解析 Q 文件 ----------
+# ---------- 1) parse Q file ----------
 q_records = []
 for fp in root.rglob("*.Q"):
     q_records.extend(iter_q_records(fp))
 
-# ---------- 2) 解析 L 文件 ----------
+# ---------- 2) parse L file ----------
 l_records = []
 for fp in root.rglob("*.L"):
     l_records.extend(iter_l_records(fp))
 
-# —— 建立 “能量 → level_id” 索引（四舍五入到 1 keV）
+# -- build "energy → level_id" index (rounded to 1 keV)
 level_idx = {
     round(l.energy_keV, 1): l.level_id for l in l_records if l.energy_keV is not None
 }
 
-# ---------- 3) 解析 G 文件 ----------
+# ---------- 3) parse G file ----------
 g_records = []
 for fp in root.rglob("*.G"):
     g_records.extend(iter_g_records(fp, level_idx))
 
 
-# ---------- 4) 转 DataFrame 并保存 Feather ----------
+# ---------- 4) convert to DataFrame and save as Feather ----------
 def to_df(objs):
-    """把 dataclass 列表转成 DataFrame，并把 extras 字典转成 JSON 字符串"""
+    """Convert dataclass list to DataFrame, and convert extras dict to JSON string"""
     df = pd.DataFrame([o.__dict__ for o in objs])
     if "extras" in df.columns:
         df["extras"] = df["extras"].apply(json.dumps)
@@ -58,4 +58,4 @@ to_df(q_records).to_feather("q.feather")
 to_df(l_records).to_feather("levels.feather")
 to_df(g_records).to_feather("gammas.feather")
 
-print("✔  已生成  q.feather / levels.feather / gammas.feather")
+print("✔  Generated  q.feather / levels.feather / gammas.feather")

@@ -1,4 +1,4 @@
-# tests/test_model.py  —— 极简、纯虚拟数据版
+# tests/test_model.py  -- minimal, pure dummy data version
 # tests/test_model.py  -- super simple, just use fake data
 import torch
 from nucdiff.model.incremental import IncrementalModel
