@@ -1,0 +1,33 @@
+# Model and LoRA Configuration
+backbone_name: "mlp"
+rank: 8
+alpha: 16
+fisher_l2: 1e-4
+train_backbone_first_year: true 
+start_year: 2004
+
+# Transformer Configuration
+d_model: 128
+n_layers: 4
+n_heads: 4
+ff_dim: 512
+task_weights: {L: 1.0, G: 1.0, Q: 1.0}
+
+# Data and Training Configuration
+feather_paths:
+  - levels.feather
+  - gammas.feather
+  - q.feather
+target_col: q_value_keV
+batch_size: 256
+max_epochs: 2
+train_frac: 0.8
+lr: 1e-6
+early_stop_patience: 1
+seed: 42
+embed_dim: 8
+
+# Logging and Monitoring
+use_wandb: false
+wandb_project: "nucdiff"
+log_every: 10 

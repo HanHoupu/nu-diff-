@@ -18,6 +18,7 @@ class TransformerModel(nn.Module):
         # Embeddings
         self.elem_embed = nn.Embedding(len(elem2idx), self.d_model)
         self.rec_embed = nn.Embedding(len(rec2idx), self.d_model)
+        self.feature_type_embed = nn.Embedding(15, self.d_model)  # 15个特征类型
         self.numeric_proj = nn.Linear(1, self.d_model)
         
         # Transformer Encoder
@@ -67,17 +68,24 @@ class TransformerModel(nn.Module):
     
     def forward(self, x):
         batch_size = x['element'].shape[0]
+        seq_len = x['numeric'].shape[1]  # 15个数值特征作为序列长度
         
-        # Process discrete features
-        elem_emb = self.elem_embed(x['element'])  # [B, seq_len, d_model]
-        rec_emb = self.rec_embed(x['record_type'])  # [B, seq_len, d_model]
+        # Process numeric features as tokens
+        numeric = x['numeric'].unsqueeze(-1)  # [B, 15, 1]
+        numeric_emb = self.numeric_proj(numeric)  # [B, 15, d_model]
         
-        # Process numeric features
-        numeric = x['numeric'].unsqueeze(-1)  # [B, seq_len, 1]
-        numeric_emb = self.numeric_proj(numeric)  # [B, seq_len, d_model]
+        # Process feature type embeddings
+        feature_type_emb = self.feature_type_embed(x['feature_type_ids'])  # [B, 15, d_model]
         
-        # Combine embeddings
-        combined = elem_emb + rec_emb + numeric_emb  # [B, seq_len, d_model]
+        # Process discrete features - expand to match sequence length
+        elem_emb = self.elem_embed(x['element'])  # [B, d_model]
+        elem_emb = elem_emb.unsqueeze(1).expand(-1, seq_len, -1)  # [B, 15, d_model]
+        
+        rec_emb = self.rec_embed(x['record_type'])  # [B, d_model]
+        rec_emb = rec_emb.unsqueeze(1).expand(-1, seq_len, -1)  # [B, 15, d_model]
+        
+        # Combine all embeddings
+        combined = numeric_emb + feature_type_emb + elem_emb + rec_emb  # [B, 15, d_model]
         
         # Add positional encoding (simple)
         seq_len = combined.size(1)
@@ -106,10 +114,33 @@ class TransformerModel(nn.Module):
         x, y = batch
         predictions = self.forward(x)
         
-        # Calculate losses for each task
-        loss_L = F.l1_loss(predictions["L"], y["L"]) if "L" in y else torch.tensor(0.0, device=predictions["L"].device)
-        loss_G = F.l1_loss(predictions["G"], y["G"]) if "G" in y else torch.tensor(0.0, device=predictions["G"].device)
-        loss_Q = F.l1_loss(predictions["Q"], y["Q"]) if "Q" in y else torch.tensor(0.0, device=predictions["Q"].device)
+        # Calculate losses for each task - 过滤NaN值
+        if "L" in y:
+            valid_L = ~torch.isnan(y["L"])
+            if valid_L.any():
+                loss_L = F.l1_loss(predictions["L"][valid_L], y["L"][valid_L])
+            else:
+                loss_L = torch.tensor(0.0, device=predictions["L"].device)
+        else:
+            loss_L = torch.tensor(0.0, device=predictions["L"].device)
+            
+        if "G" in y:
+            valid_G = ~torch.isnan(y["G"])
+            if valid_G.any():
+                loss_G = F.l1_loss(predictions["G"][valid_G], y["G"][valid_G])
+            else:
+                loss_G = torch.tensor(0.0, device=predictions["G"].device)
+        else:
+            loss_G = torch.tensor(0.0, device=predictions["G"].device)
+            
+        if "Q" in y:
+            valid_Q = ~torch.isnan(y["Q"])
+            if valid_Q.any():
+                loss_Q = F.l1_loss(predictions["Q"][valid_Q], y["Q"][valid_Q])
+            else:
+                loss_Q = torch.tensor(0.0, device=predictions["Q"].device)
+        else:
+            loss_Q = torch.tensor(0.0, device=predictions["Q"].device)
         
         # Weighted sum
         total_loss = (

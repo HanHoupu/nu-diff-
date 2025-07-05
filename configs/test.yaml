@@ -1,0 +1,20 @@
+# Model configuration
+hidden_dim: 128
+num_layers: 4
+num_heads: 4
+dropout: 0.1
+seq_len: 10
+fisher_l2: 1e-4
+
+# Data and training
+batch_size: 256
+max_epochs: 2
+train_frac: 0.8
+lr: 1e-4
+early_stop_patience: 1
+seed: 42
+
+# Logging
+use_wandb: false
+wandb_project: "nucdiff"
+log_every: 10 

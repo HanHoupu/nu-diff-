@@ -90,8 +90,9 @@ for epoch in range(cfg["max_epochs"]):
         loss_task = model.training_step((batch_x, batch_y))
         loss_reg = fisher_l2_reg(model, cfg.get("fisher_l2", 0.0))
         loss_total = loss_task + loss_reg
-        optimizer.step()
+
         safety(loss_total, model) 
+        optimizer.step()
         optimizer.zero_grad()
         
         if global_step % log_every == 0:
