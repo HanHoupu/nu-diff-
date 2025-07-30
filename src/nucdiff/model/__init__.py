@@ -1,3 +1,1 @@
-from .transformer_model import TransformerModel
-
-__all__ = ['TransformerModel']
+# This file makes the 'model' directory a Python package.

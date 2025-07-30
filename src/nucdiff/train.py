@@ -1,123 +1,223 @@
 #!/usr/bin/env python3
 """
-Train entry. Example:
-  python -m nucdiff.train --year 2004 --cfg configs/default.yaml
+Unified training script for sequence-to-sequence nuclear level prediction.
+Powered by PyTorch Lightning.
 """
-import pathlib, sys
+import torch, warnings, sys, yaml, argparse, logging, json
+from pathlib import Path
+import pandas as pd
+import pytorch_lightning as pl
+import torch.nn.functional as F
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger
+from torch.utils.data import DataLoader
+import os
 
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
+# --- Suppress ALL verbose outputs ---
+logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
+logging.getLogger("lightning_fabric").setLevel(logging.ERROR)
+torch.set_float32_matmul_precision('medium')
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
-import argparse, datetime, subprocess, shutil, yaml, torch
-from torch.utils.data import DataLoader
+from src.nucdiff.model.seq2seq_model import Seq2SeqTransformer
+from src.nucdiff.utils.seed import set_seed
+from src.nucdiff.data.dataloader import HybridSeqENSDFDataset, PadCollateHybrid
+from src.nucdiff.data.tokenizer import LevelTokenizer
+from src.nucdiff.utils.callbacks import CustomProgressBar
+from src.nucdiff.utils.paths import get_preprocessed_paths, get_run_name
 
-# new DataLoader, L/G/Q three tables together
-from nucdiff.data.dataloader import get_loaders, build_dataset
-
-# Transformer multi-task model
-from nucdiff.model import TransformerModel
-from nucdiff.utils.seed import set_seed
-from nucdiff.utils.earlystop import EarlyStopper
-from nucdiff.utils.fisher import fisher_l2_reg
-from nucdiff.utils.evaluate import evaluate_mae_multi
-from nucdiff.data.dataloader import build_dataset
-from nucdiff.model.safety import SafetyCallback 
-from nucdiff.utils.logger import TrainLogger
-
-safety = SafetyCallback(clip_norm=1.0)   
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--year", type=int, required=True)
-parser.add_argument("--cfg", type=str, default="configs/default.yaml")
-args = parser.parse_args()
-
-# --- read config & set random seed ---
-with open(args.cfg, "r", encoding="utf-8") as f:
-    cfg = yaml.safe_load(f)
-set_seed(cfg["seed"])
-
-# --- make run dir & save meta info ---
-now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
-run_dir = PROJECT_ROOT / f"outputs/run-{now}"
-(run_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
-(run_dir / "logs").mkdir(exist_ok=True)
-
-# Git commit
-try:
-    commit = (
-        subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT)
-        .decode()
-        .strip()
-    )
-except subprocess.SubprocessError:
-    commit = "no-git-found"
-(run_dir / "commit.txt").write_text(commit + "\n")
-# dependency list
-reqs = subprocess.check_output(["pip", "freeze"]).decode()
-(run_dir / "requirements.txt").write_text(reqs)
-# backup config & command
-shutil.copy(args.cfg, run_dir / "config.yaml")
-(run_dir / "cmd.txt").write_text(" ".join(sys.argv) + "\n")
-
-# --- build dataset & DataLoader ---
-train_ds, val_ds, (elem2idx, rec2idx, numeric_dim) = build_dataset(args.year, cfg)
-train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True)
-val_loader = DataLoader(val_ds, batch_size=cfg["batch_size"])
-
-# --- device & model ---
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = TransformerModel(cfg, elem2idx, rec2idx).to(device)
-
-# --- optimizer only update LoRA and head ---
-optimizer = torch.optim.AdamW(
-    (p for p in model.parameters() if p.requires_grad),
-    lr=float(cfg["lr"]),  # even if YAML is written as "1e-4" it will be converted
-)
-
-# --- training loop ---
-early_stopper = EarlyStopper(patience=cfg["early_stop_patience"])
-logger = TrainLogger(cfg)
-global_step = 0
-log_every = cfg.get("log_every", 10)
-
-for epoch in range(cfg["max_epochs"]):
-    model.train()
-    for batch_x, batch_y in train_loader:
-        # move to device
-        batch_x = {k: v.to(device) for k, v in batch_x.items()}
-        batch_y = {k: v.to(device) for k, v in batch_y.items()}
-        # forward + loss
-        loss_task = model.training_step((batch_x, batch_y))
-        loss_reg = fisher_l2_reg(model, cfg.get("fisher_l2", 0.0))
-        loss_total = loss_task + loss_reg
-
-        safety(loss_total, model) 
-        optimizer.step()
-        optimizer.zero_grad()
+class NucDiffSeq2SeqModule(pl.LightningModule):
+    def __init__(self, cfg: dict, vocab_size: int, encoder_feature_dim: int, pad_id: int, delta_e_mean: float, delta_e_std: float):
+        super().__init__()
+        self.save_hyperparameters()
+        self.cfg = cfg
+        self.pad_id = pad_id
+        self.delta_e_mean = delta_e_mean
+        self.delta_e_std = delta_e_std
         
-        if global_step % log_every == 0:
-            logger.log_scalar("train/loss", loss_task.item() if hasattr(loss_task, 'item') else loss_task, global_step)
-            logger.log_scalar("train/loss_reg", loss_reg.item() if hasattr(loss_reg, 'item') else loss_reg, global_step)
-        global_step += 1
+        self.model = Seq2SeqTransformer(
+            vocab_size=vocab_size,
+            encoder_feature_dim=encoder_feature_dim,
+            d_model=cfg.get("d_model", 512),
+            n_heads=cfg.get("n_heads", 8),
+            n_encoder_layers=cfg.get("n_encoder_layers", 6),
+            n_decoder_layers=cfg.get("n_decoder_layers", 6),
+            ff_dim=cfg.get("ff_dim", 2048),
+            dropout=cfg.get("dropout", 0.1)
+        )
+        self.regr_loss_weight = cfg.get("regr_loss_weight", 1.0)
 
-    # validation
-    metrics = evaluate_mae_multi(model, val_loader, device)
-    mae_avg = metrics["avg"]
-    print(f"[{args.year}] epoch {epoch} | val MAE = {mae_avg:.4f} (L:{metrics['L']:.4f} G:{metrics['G']:.4f} Q:{metrics['Q']:.4f})")
+    def _normalize_delta_e(self, delta_e):
+        return (delta_e - self.delta_e_mean) / (self.delta_e_std + 1e-6)
+
+    def forward(self, batch):
+        # Scale the delta_E input before passing it to the model
+        batch['decoder_input_delta_e_scaled'] = self._normalize_delta_e(batch['decoder_input_delta_e'])
+        
+        return self.model(
+            src=batch['encoder_features'],
+            tgt_tokens=batch['decoder_input_tokens'],
+            tgt_delta_e=batch['decoder_input_delta_e_scaled'],
+            tgt_padding_mask=~batch['attention_mask']
+        )
+
+    def _step(self, batch, stage: str):
+        class_logits, regr_output_scaled = self(batch)
+        target_tokens = batch['target_tokens']
+        target_delta_e = batch['target_delta_e']
+        attention_mask = batch['attention_mask']
+        
+        # Scale the regression target for loss calculation
+        target_delta_e_scaled = self._normalize_delta_e(target_delta_e)
+
+        # Classification Loss
+        loss_class = F.cross_entropy(
+            class_logits.view(-1, class_logits.size(-1)),
+            target_tokens.view(-1),
+            ignore_index=self.pad_id,
+            label_smoothing=self.cfg.get("label_smoothing", 0.0)
+        )
+
+        # Regression Loss (calculated on scaled values)
+        loss_regr = F.mse_loss(
+            regr_output_scaled[attention_mask],
+            target_delta_e_scaled[attention_mask]
+        )
+        
+        # Total Weighted Loss
+        total_loss = loss_class + self.regr_loss_weight * loss_regr
+        
+        perplexity = torch.exp(loss_class) # Perplexity is derived from classification loss only
+        
+        # Logging
+        self.log(f"{stage}_loss", total_loss, prog_bar=True, on_epoch=True, on_step=False)
+        self.log(f"{stage}_loss_class", loss_class, prog_bar=False, on_epoch=True, on_step=False)
+        self.log(f"{stage}_loss_regr", loss_regr, prog_bar=False, on_epoch=True, on_step=False)
+        # Log perplexity for the callback
+        self.log(f"{stage}_perplexity", perplexity, prog_bar=False, on_epoch=True, on_step=False)
+        
+        if stage == 'train':
+            self.log("train_loss_step", total_loss, prog_bar=True, logger=False)
+        return total_loss
+
+    def training_step(self, batch, batch_idx):
+        return self._step(batch, "train")
+
+    def validation_step(self, batch, batch_idx):
+        self._step(batch, "val")
+
+    def configure_optimizers(self):
+        opt = torch.optim.AdamW(
+            self.parameters(), 
+            lr=self.cfg.get("lr_base", 1e-4), 
+            weight_decay=self.cfg.get("weight_decay", 0.01)
+        )
+        return opt
+
+def make_loaders_from_preprocessed(cfg: dict, task: str, debug: bool, overfit: bool):
+    """
+    Loads preprocessed sequence data and creates PyTorch DataLoaders.
+    """
+    train_path, val_path = get_preprocessed_paths(cfg, task)
+    data_dir = train_path.parent
+
+    logging.info(f"Loading tokenizer from: {data_dir / 'tokenizer_vocab.json'}")
+    tokenizer = LevelTokenizer.load(data_dir / 'tokenizer_vocab.json')
     
-    # Log individual task metrics
-    logger.log_scalar("val/mae_L", metrics["L"], epoch)
-    logger.log_scalar("val/mae_G", metrics["G"], epoch)
-    logger.log_scalar("val/mae_Q", metrics["Q"], epoch)
-    logger.log_scalar("val/mae_avg", mae_avg, epoch)
+    with open(data_dir / 'metadata.json', 'r') as f:
+        metadata = json.load(f)
+    delta_e_scaler_info = metadata.get('delta_e_scaler', {'mean': 0.0, 'std': 1.0})
+    delta_e_mean = delta_e_scaler_info['mean']
+    delta_e_std = delta_e_scaler_info['std']
+    logging.info(f"Loaded delta_E scaler: mean={delta_e_mean:.4f}, std={delta_e_std:.4f}")
+
+    logging.info(f"Loading full training data from: {train_path}")
+    train_df = pd.read_feather(train_path)
+    logging.info(f"Loading full validation data from: {val_path}")
+    val_df = pd.read_feather(val_path)
     
-    if early_stopper.step(mae_avg):
-        print("Early stop triggered.")
-        break
+    if overfit:
+        logging.warning("--- OVERFITTING MODE ENABLED ---")
+        sample_df = train_df.sample(n=100, random_state=cfg.get("seed", 412))
+        train_df = sample_df
+        val_df = sample_df.copy()
+        cfg['dropout'] = 0.0
+    elif debug:
+        logging.warning("--- DEBUG MODE ENABLED ---")
+        train_df = train_df.head(1000)
+        val_df = val_df.head(200)
 
-# --- save backbone + this year LoRA ---
-torch.save(model.state_dict(), run_dir / "checkpoints" / f"model_{args.year}.pth")
-model.save_lora(str(run_dir / "checkpoints" / f"lora_{args.year}.pth"))
+    logging.info(f"Final training set size: {len(train_df):,} nuclides")
+    logging.info(f"Final validation set size: {len(val_df):,} nuclides")
 
-logger.close()
-print(f"✔ Year {args.year} finished. Artifacts saved to: {run_dir}")
+    # Define features for the encoder, now with enhanced physics inputs and year
+    encoder_feature_cols = [
+        'Z_int', 'A_int', 'asym', 
+        'is_odd_Z', 'is_odd_N', 
+        'delta_magic_z', 'delta_magic_n', 
+        'valence_p', 'valence_n',
+        'year' # Added year for incremental learning
+    ]
+    
+    train_ds = HybridSeqENSDFDataset(train_df, tokenizer, encoder_feature_cols)
+    val_ds = HybridSeqENSDFDataset(val_df, tokenizer, encoder_feature_cols)
+    
+    pad_collate_fn = PadCollateHybrid(pad_id=tokenizer.pad_id)
+    # BUG修复：在Windows上，num_workers > 0 可能会导致 Segmentation Fault
+    # 强制设为0以保证稳定性
+    workers = 0 
+    loader_kw = dict(batch_size=cfg["batch_size"], num_workers=workers, collate_fn=pad_collate_fn)
+    
+    return (DataLoader(train_ds, shuffle=True, **loader_kw),
+            DataLoader(val_ds, shuffle=False, **loader_kw),
+            tokenizer,
+            delta_e_mean,
+            delta_e_std)
+
+def main():
+    """Main training entry point."""
+    parser = argparse.ArgumentParser(description="NucDiff Seq2Seq Trainer")
+    parser.add_argument("--cfg", type=str, required=True, help="Path to the configuration file.")
+    parser.add_argument("--task", type=str, default="SEQ", help="Task to run (must be 'SEQ' for this model).")
+    parser.add_argument("--debug", action="store_true", help="Run in debug mode.")
+    parser.add_argument("--overfit", action="store_true", help="Run in overfitting test mode.")
+    args = parser.parse_args()
+
+    with open(args.cfg, 'r', encoding='utf-8') as f:
+        cfg = yaml.safe_load(f)
+    set_seed(cfg["seed"])
+
+    train_loader, val_loader, tokenizer, delta_e_mean, delta_e_std = make_loaders_from_preprocessed(cfg, args.task, args.debug, args.overfit)
+    
+    module = NucDiffSeq2SeqModule(
+        cfg=cfg,
+        vocab_size=len(tokenizer),
+        encoder_feature_dim=len(train_loader.dataset.encoder_feature_cols),
+        pad_id=tokenizer.pad_id,
+        delta_e_mean=delta_e_mean,
+        delta_e_std=delta_e_std
+    )
+    
+    run_name = get_run_name(cfg, args.task)
+    logger = CSVLogger("runs", name=run_name) 
+
+    cb_ckpt = ModelCheckpoint(monitor="val_loss", mode="min", save_top_k=1, filename="best-{epoch}-{val_loss:.4f}")
+    cb_early = EarlyStopping(monitor="val_loss", patience=cfg.get("early_stop_patience", 10), mode="min")
+    cb_lr = LearningRateMonitor(logging_interval="epoch")
+
+    trainer = pl.Trainer(
+        max_epochs=cfg["max_epochs"],
+        precision="16-mixed" if cfg.get("use_amp", True) else 32,
+        callbacks=[cb_early, cb_ckpt, cb_lr, CustomProgressBar()],
+        logger=logger,
+        enable_model_summary=True,
+        num_sanity_val_steps=0,
+        enable_progress_bar=False, # Disable the default progress bar
+        accumulate_grad_batches=cfg.get("gradient_accumulation_steps", 1)
+    )
+    trainer.fit(module, train_loader, val_loader)
+
+if __name__ == "__main__":
+    main()

@@ -4,7 +4,7 @@ import math
 
 class LoRALayer(nn.Module):
     """
-    只注入到 Q / V；可直接 wrap 在线性层外。
+    Only inject into Q / V; can directly wrap outside linear layer.
     """
 
     def __init__(self, orig_linear: nn.Linear, rank: int = 8, alpha: float = 16):

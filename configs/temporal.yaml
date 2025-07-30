@@ -1,0 +1,44 @@
+# configs/temporal.yaml (建议修改版)
+
+# --- Data source config ---
+seed: 412
+val_frac: 0.2
+base_start_year: 2005
+base_end_year: 2010
+
+# --- Model Hyperparameters ---
+d_model: 512
+n_layers: 6
+n_heads: 8
+ff_dim: 2048
+dropout: 0.1
+label_smoothing: 0.1
+
+# --- Training & Optimization ---
+# 建议1: 增加 batch_size (如果显存允许)
+batch_size: 32 
+gradient_accumulation_steps: 2 # 保持有效 batch_size = 64
+max_epochs: 250
+use_amp: true
+
+# --- Loss Weights ---
+regr_loss_weight: 9.7687
+
+# --- Optimizer (AdamW) ---
+lr_base: 0.0001
+lr_min: 0.000001
+weight_decay: 0.015
+grad_clip_norm: 1.0
+
+# --- LR Scheduler ---
+# 建议2: 明确 warm-up steps for scheduler
+warmup_steps: 1000 
+
+# --- Callbacks ---
+# 建议3: 减少 early stopping 的耐心值
+early_stop_patience: 30 
+min_delta: 0.001
+
+# --- 日志与监控 ---
+use_wandb: false
+log_every: 20

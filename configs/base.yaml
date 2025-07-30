@@ -1,0 +1,45 @@
+# ─── BASE模型训练配置 ──────────────────────────
+# BASE模型使用2004-2010年的L数据进行训练
+base_start_year: 2004
+base_end_year: 2010
+val_start_year: 2004  # 验证集使用2004-2010年数据
+val_end_year: 2010    # 验证集使用2004-2010年数据
+
+# ─── Transformer 配置 ──────────────────────────
+d_model: 256
+n_layers: 8
+n_heads: 8
+ff_dim: 1024
+dropout: 0.1
+
+# ─── 数据与训练 ──────────────────────────
+feather_paths:
+  - levels.feather
+  - gammas.feather
+  - q.feather
+target_col: energy_keV
+batch_size: 256
+max_epochs: 50  # BASE模型训练轮数
+train_frac: 0.8  # 使用80%作为训练，20%作为验证
+lr: 1e-4
+early_stop_patience: 15  # BASE模型早停耐心值
+min_delta: 0.001
+seed: 42
+embed_dim: 8
+
+# ─── 正则化 ──────────────────────────
+weight_decay: 0.01
+grad_clip_norm: 5.0  # 放宽梯度裁剪
+
+# ─── 性能优化 ──────────────────────────
+use_amp: true  # 启用自动混合精度
+
+# ─── 日志与监控 ──────────────────────────
+use_wandb: false
+log_every: 10
+
+# ─── 任务权重 ──────────────────────────
+task_weights:
+  L: 1.0  # BASE模型专注于L任务
+  G: 0.0
+  Q: 0.0 

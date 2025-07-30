@@ -1,0 +1,33 @@
+# ─── 单任务训练配置 ──────────────────────────
+# 训练年份
+year: 2004
+
+# ─── Transformer 配置 ──────────────────────────
+d_model: 256
+n_layers: 8
+n_heads: 8
+ff_dim: 1024
+dropout: 0.1
+
+# ─── 数据与训练 ──────────────────────────
+feather_paths:
+  - levels.feather
+  - gammas.feather
+  - q.feather
+target_col: energy_keV
+batch_size: 256
+max_epochs: 100
+train_frac: 0.8
+lr: 1e-4
+early_stop_patience: 20
+min_delta: 0.001
+seed: 42
+embed_dim: 8
+
+# ─── 正则化 ──────────────────────────
+weight_decay: 1e-4
+grad_clip_norm: 5.0
+
+# ─── 日志与监控 ──────────────────────────
+use_wandb: false
+log_every: 10 

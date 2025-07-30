@@ -1,10 +1,58 @@
-# ingore all clean data files
-clean data/
-# ignore all raw data files
-ENSDF-*
-ENSDF-*/
-# ignore all feather data files
-*.feather
-# ignore all output data files
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# IDE files
+.vscode/
+.idea/
+
+# Data files - Ignoring the top-level directories
+/clean data/
+/clean_data_split/
+/preprocessed_data/
+/output/
+
+# Raw data files
+*ENSDF*
+*levels_*.csv
+*gammas_*.csv
+
+# Experiment tracking
+/runs/
 /src/outputs/
-/.VSCodeCounter
+/src/logs/
+# This is redundant if the top-level one is ignored, but good for clarity
+/src/preprocessed_data/ 
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Specific file types to ignore globally
+*.csv
+*.pkl
+*.feather
+*.pth
+*.ckpt
+events.out.tfevents*
+*.log
+*.DS_Store
+
+# Large dataset files ignored
+/ENSDF-*
+/*.feather
+/clean_data_split/
+/clean data/
+/preprocessed_data/
+/output/
+/runs/
+/src/outputs/
+/src/logs/
+/src/preprocessed_data/ 
