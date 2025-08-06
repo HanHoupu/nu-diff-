@@ -15,7 +15,7 @@ class HybridSeqENSDFDataset(Dataset):
     """
     Prepares data for the hybrid (Regression + Classification) Seq2Seq model.
     """
-    def __init__(self, df: pd.DataFrame, tokenizer: LevelTokenizer, encoder_feature_cols: List[str]):
+    def __init__(self, df: pd.DataFrame, tokenizer, encoder_feature_cols: List[str]):
         self.df = df
         self.tokenizer = tokenizer
         self.encoder_feature_cols = encoder_feature_cols
@@ -24,7 +24,14 @@ class HybridSeqENSDFDataset(Dataset):
         self.encoder_features = torch.tensor(self.df[self.encoder_feature_cols].values, dtype=torch.float32)
         # Pre-load and parse the JSON strings for sequences
         self.delta_e_sequences = [json.loads(s) for s in self.df['delta_e_sequence']]
-        self.token_sequences = self.df['token_sequence'].tolist()
+        
+        # Handle different column names for token sequences
+        if 'token_sequence' in self.df.columns:
+            self.token_sequences = self.df['token_sequence'].tolist()
+        elif 'level_sequence' in self.df.columns:
+            self.token_sequences = self.df['level_sequence'].tolist()
+        else:
+            raise ValueError("Neither 'token_sequence' nor 'level_sequence' found in dataframe")
         
     def __len__(self):
         return len(self.df)
@@ -48,6 +55,9 @@ class HybridSeqENSDFDataset(Dataset):
         # The length of token and delta_e sequences might differ by 1 after processing.
         # We need to ensure they have the same length for padding and batching.
         min_len = min(len(decoder_input_tokens), len(decoder_input_delta_e))
+        
+        # NEW: Calculate target sequence length (number of valid tokens including EOS)
+        target_length = torch.tensor(len(target_tokens[:min_len]), dtype=torch.float32)
 
         return {
             'encoder_features': encoder_features,
@@ -55,6 +65,7 @@ class HybridSeqENSDFDataset(Dataset):
             'decoder_input_delta_e': decoder_input_delta_e[:min_len],
             'target_tokens': target_tokens[:min_len],
             'target_delta_e': target_delta_e[:min_len],
+            'target_length': target_length,  # NEW: Target sequence length
         }
 
 class PadCollateHybrid:
@@ -71,6 +82,7 @@ class PadCollateHybrid:
         input_delta_e = [item['decoder_input_delta_e'] for item in batch]
         target_tokens = [item['target_tokens'] for item in batch]
         target_delta_e = [item['target_delta_e'] for item in batch]
+        target_lengths = [item['target_length'] for item in batch]  # NEW: Extract target lengths
         
         # Pad all sequence-like tensors
         padded_input_tokens = pad_sequence(input_tokens, batch_first=True, padding_value=self.pad_id)
@@ -80,6 +92,7 @@ class PadCollateHybrid:
         
         # Stack the non-sequence data
         stacked_encoder_features = torch.stack(encoder_features, dim=0)
+        stacked_target_lengths = torch.stack(target_lengths, dim=0)  # NEW: Stack target lengths
         
         # Create the attention mask for the decoder based on token padding
         attention_mask = (padded_input_tokens != self.pad_id)
@@ -90,5 +103,6 @@ class PadCollateHybrid:
             'decoder_input_delta_e': padded_input_delta_e,
             'target_tokens': padded_target_tokens,
             'target_delta_e': padded_target_delta_e,
+            'target_lengths': stacked_target_lengths,  # NEW: Target sequence lengths
             'attention_mask': attention_mask
         }

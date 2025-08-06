@@ -1,0 +1,86 @@
+# configs/temporal_cli.yaml
+# Optimized configuration for LightningCLI
+
+# Model configuration - direct parameters without init_args
+model:
+  d_model: 512
+  n_heads: 8
+  n_encoder_layers: 6
+  n_decoder_layers: 6
+  ff_dim: 2048
+  dropout: 0.1
+  label_smoothing: 0.0
+  content_loss_weight: 1.0
+  length_loss_weight: 0.3  # Balanced: strong enough to learn, not dominant
+  regr_loss_weight: 0.1
+  use_dynamic_lambda: false
+  lr_base: 0.0003
+  lr_min: 0.00003
+  weight_decay: 0.01
+  grad_clip_norm: 1.0
+  warmup_steps: 200
+  use_separate_head_lr: true
+  regr_lr_multiplier: 5.0
+  length_lr_multiplier: 5.0   # Moderate learning rate for length head (5x base)
+  delta_e_scaler: 100.0
+  train_head: both
+  # NEW: Length Head Enhanced Learning Configuration
+  length_enhanced_learning: false   # DISABLED for A/B diagnostic run
+  length_grad_accumulation: 4
+  length_warmup_steps: 100
+  length_boost_factor: 1.5
+
+# Data configuration - direct parameters without init_args
+data:
+  task: SEQ
+  years_range: "2005-2010"
+  seed: 412
+  train_frac: 0.80  # 80% training, 20% validation (standard split)
+  data_subset_ratio: 0.50  # Increased to 50% for stability in diagnostic run
+  batch_size: 64
+  gradient_accumulation_steps: 2
+  num_workers: 4
+  force_rebuild_vocab: false
+  # Route-2 temporal augmentation (reproducible)
+  epoch_resample: false             # DISABLED to remove per-epoch distribution shift
+  k_year_augment: 2                 # keep for later re-enable with k warm-up
+
+# Trainer configuration
+trainer:
+  max_epochs: 70
+  accelerator: auto
+  devices: auto
+  precision: 32
+  gradient_clip_val: 1.0
+  log_every_n_steps: 40
+  enable_checkpointing: true
+  enable_progress_bar: false
+  enable_model_summary: true
+  
+  callbacks:
+    - class_path: src.nucdiff.trainer.lightning_callbacks.NuclearPhysicsDiagnostics
+      init_args:
+        print_frequency: 10
+    - class_path: src.nucdiff.trainer.lightning_callbacks.GradientComponentMonitor
+    - class_path: src.nucdiff.utils.callbacks.CustomProgressBar
+    - class_path: pytorch_lightning.callbacks.ModelSummary
+      init_args:
+        max_depth: 2
+    - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: epoch
+    - class_path: pytorch_lightning.callbacks.EarlyStopping
+      init_args:
+        monitor: val/loss
+        patience: 30
+        min_delta: 0.0001
+        mode: min
+    - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val/loss
+        save_top_k: 3
+        mode: min
+        filename: nucdiff-{epoch:02d}-{val_loss:.4f}
+
+# Seed for reproducibility
+seed_everything: 412

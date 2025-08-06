@@ -7,6 +7,7 @@ class LevelTokenizer:
     """
     A simple tokenizer for nuclear level sequences.
     Handles tokenization, vocabulary building, and encoding/decoding.
+    - Supports explicit year tokens like "<Y2006>" when present in sequences.
     """
     def __init__(self, pad_token="[PAD]", sos_token="[SOS]", eos_token="[EOS]", unk_token="[UNK]", sep_token=";"):
         self.pad_token = pad_token
@@ -19,6 +20,10 @@ class LevelTokenizer:
         self.special_tokens = [pad_token, sos_token, eos_token, unk_token]
         self.token_to_id: Dict[str, int] = {token: i for i, token in enumerate(self.special_tokens)}
         self.id_to_token: Dict[int, str] = {i: token for token, i in self.token_to_id.items()}
+
+        # cache for quick year-token detection
+        self._year_prefix = "<Y"
+        self._year_suffix = ">"
 
     def __len__(self):
         return len(self.token_to_id)
@@ -45,8 +50,8 @@ class LevelTokenizer:
         # Split each sequence by the separator to get the actual tokens
         for seq in sequences:
             tokens = seq.split(self.sep_token)
-            all_tokens.update(tokens)
-        
+            all_tokens.update(t.strip() for t in tokens if t is not None and t != "")
+
         # Add new tokens to the vocabulary
         for token in sorted(list(all_tokens)):
             if token not in self.token_to_id:
@@ -57,10 +62,14 @@ class LevelTokenizer:
 
     def encode(self, sequence: str) -> List[int]:
         """Encodes a single sequence string into a list of token IDs."""
-        tokens = sequence.split(self.sep_token)
+        tokens = [t.strip() for t in sequence.split(self.sep_token) if t is not None and t != ""]
         encoded = [self.sos_id]
         for token in tokens:
-            encoded.append(self.token_to_id.get(token, self.token_to_id[self.unk_token]))
+            # Treat explicit year tokens as atomic tokens
+            if token.startswith(self._year_prefix) and token.endswith(self._year_suffix):
+                encoded.append(self.token_to_id.get(token, self.token_to_id[self.unk_token]))
+            else:
+                encoded.append(self.token_to_id.get(token, self.token_to_id[self.unk_token]))
         encoded.append(self.eos_id)
         return encoded
 

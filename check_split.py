@@ -1,96 +1,101 @@
-import argparse
+# check_split.py
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
 from pathlib import Path
+import argparse
 import sys
-import yaml
-import numpy as np
 
-# --- Setup Paths ---
-# This allows the script to find the src module
-PROJECT_ROOT = Path(__file__).resolve().parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
+def find_latest_files(data_dir: Path, task: str = "SEQ"):
+    """Finds the latest train and validation feather files for a given task."""
+    train_files = list(data_dir.glob(f"task_{task}_*_train.feather"))
+    val_files = list(data_dir.glob(f"task_{task}_*_val.feather"))
 
-from src.nucdiff.utils.paths import get_preprocessed_paths
+    if not train_files:
+        print(f"❌ No training files found in '{data_dir}' for task '{task}'.")
+        return None, None
 
-def visualize_split(config_path: str, output_filename: str):
+    # Sort by creation time to get the most recent ones
+    latest_train = sorted(train_files, key=lambda f: f.stat().st_ctime, reverse=True)[0]
+    
+    # Find the corresponding validation file
+    # Example train file name: task_SEQ_years_2005-2010_seed_412_frac_0.80_train.feather
+    file_stem = latest_train.name.replace('_train.feather', '')
+    latest_val = data_dir / f"{file_stem}_val.feather"
+
+    if not latest_val.exists():
+        print(f"⚠️ Warning: Corresponding validation file not found for {latest_train.name}.")
+        return latest_train, None
+        
+    return latest_train, latest_val
+
+def check_for_leakage(train_path: Path, val_path: Path):
     """
-    Loads preprocessed train/val data based on a config file and generates
-    a nuclide chart visualizing the split.
+    Checks for nuclide-level leakage between a training and a validation set.
     """
-    print(f"--- Analyzing Data Split from Config: {config_path} ---")
-    cfg_path = Path(config_path)
-    if not cfg_path.exists():
-        raise FileNotFoundError(f"Config file not found at: {cfg_path}")
+    print(f"--- Checking for data leakage ---")
+    print(f"  Train file: {train_path.name}")
+    print(f"  Val file:   {val_path.name}")
 
-    with open(cfg_path, 'r', encoding='utf-8') as f:
-        cfg = yaml.safe_load(f)
+    try:
+        train_df = pd.read_feather(train_path)
+        val_df = pd.read_feather(val_path)
+    except Exception as e:
+        print(f"❌ Error reading data files: {e}")
+        return
 
-    # --- 1. Load Data ---
-    train_path, val_path = get_preprocessed_paths(cfg, 'L')
-    print(f"Attempting to load train data from: {train_path}")
-    print(f"Attempting to load validation data from: {val_path}")
+    # Ensure required columns exist
+    required_cols = ['Z_int', 'A_int']
+    if not all(col in train_df.columns for col in required_cols) or \
+       not all(col in val_df.columns for col in required_cols):
+        print(f"❌ Required columns {required_cols} not found in one or both files.")
+        return
 
-    if not train_path.exists() or not val_path.exists():
-        raise FileNotFoundError(
-            f"Train/Val data not found at {train_path.parent}. "
-            "Please run preprocess.py with the correct config values first."
-        )
-    
-    train_df = pd.read_feather(train_path)
-    val_df = pd.read_feather(val_path)
-    print(f"Loaded {len(train_df)} train records and {len(val_df)} validation records.")
+    # Extract unique nuclides from each set
+    train_nuclides = set(zip(train_df['Z_int'], train_df['A_int']))
+    val_nuclides = set(zip(val_df['Z_int'], val_df['A_int']))
 
-    # --- 2. Generate Nuclide Chart ---
-    print("Generating train/val split nuclide chart...")
-    
-    train_nuclides = train_df[['z', 'a']].drop_duplicates().copy()
-    train_nuclides['n'] = train_nuclides['a'] - train_nuclides['z']
-    train_nuclides['split'] = 'Train'
-    
-    val_nuclides = val_df[['z', 'a']].drop_duplicates().copy()
-    val_nuclides['n'] = val_nuclides['a'] - val_nuclides['z']
-    val_nuclides['split'] = 'Validation'
-    
-    all_nuclides = pd.concat([train_nuclides, val_nuclides])
-    
-    plt.figure(figsize=(18, 11))
-    sns.scatterplot(data=all_nuclides, x='n', y='z', hue='split', alpha=0.9, s=25, palette={'Train': '#1f77b4', 'Validation': '#ff7f0e'})
-    
-    magic_numbers = [2, 8, 20, 28, 50, 82, 126]
-    for m in magic_numbers:
-        plt.axvline(x=m, color='grey', linestyle='--', linewidth=1.0, alpha=0.7)
-        plt.axhline(y=m, color='grey', linestyle='--', linewidth=1.0, alpha=0.7)
+    print(f"\n🔬 Analysis:")
+    print(f"  Unique nuclides in training set:   {len(train_nuclides)}")
+    print(f"  Unique nuclides in validation set: {len(val_nuclides)}")
 
-    plt.title('Train vs. Validation Split on the Chart of Nuclides', fontsize=18)
-    plt.xlabel('Neutron Number (N)', fontsize=14)
-    plt.ylabel('Proton Number (Z)', fontsize=14)
-    plt.grid(True, linestyle=':', alpha=0.6)
-    plt.legend(title='Dataset Split', fontsize=12)
-    plt.tight_layout()
-    
-    output_path = Path(output_filename)
-    plt.savefig(output_path)
-    print(f"\nSuccess! Chart saved to: {output_path.resolve()}")
+    # Find the intersection (the leakage)
+    leaked_nuclides = train_nuclides.intersection(val_nuclides)
+
+    print("\n--- Results ---")
+    if not leaked_nuclides:
+        print("✅ SUCCESS: No nuclide-level data leakage detected between the training and validation sets.")
+    else:
+        print(f"🚨 FAILURE: Data leakage detected!")
+        print(f"  {len(leaked_nuclides)} nuclides were found in BOTH the training and validation sets.")
+        print("  Leaked (Z, A) pairs:")
+        # Print a sample of leaked nuclides
+        for i, nuclide in enumerate(list(leaked_nuclides)[:10]):
+            print(f"    - {nuclide}")
+        if len(leaked_nuclides) > 10:
+            print("    - ... (and more)")
+    print("-" * 15)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Visualize the train/validation split of preprocessed data.")
+    parser = argparse.ArgumentParser(description="Check for data leakage between train and validation sets.")
     parser.add_argument(
-        "--cfg", 
-        required=True, 
-        help="Path to the configuration file (.yaml) used during preprocessing."
-    )
-    parser.add_argument(
-        "--out",
-        default="split_visualization.png",
-        help="Output filename for the plot."
+        "--data_dir",
+        type=Path,
+        default=Path("preprocessed_data"),
+        help="Directory containing the preprocessed .feather files."
     )
     args = parser.parse_args()
-    
-    visualize_split(config_path=args.cfg, output_filename=args.out)
+
+    if not args.data_dir.exists():
+        print(f"❌ Error: Data directory '{args.data_dir}' not found.")
+        sys.exit(1)
+
+    train_file, val_file = find_latest_files(args.data_dir)
+
+    if train_file and val_file:
+        check_for_leakage(train_file, val_file)
+    else:
+        print("\nCould not perform check due to missing files.")
+
 
 if __name__ == "__main__":
-    main() 
+    main()

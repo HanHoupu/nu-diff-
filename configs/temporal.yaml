@@ -7,38 +7,43 @@ base_start_year: 2005
 base_end_year: 2010
 
 # --- Model Hyperparameters ---
-d_model: 512
-n_layers: 6
+d_model: 512  # Restored to full model size for production training
+n_encoder_layers: 6  # Standard transformer encoder layers
+n_decoder_layers: 6  # Standard transformer decoder layers  
 n_heads: 8
-ff_dim: 2048
-dropout: 0.1
-label_smoothing: 0.1
+ff_dim: 2048  # Full feedforward dimension
+dropout: 0.1  # Enable dropout for regularization
+label_smoothing: 0.1  # Light label smoothing for better generalization
 
 # --- Training & Optimization ---
-# 建议1: 增加 batch_size (如果显存允许)
-batch_size: 32 
-gradient_accumulation_steps: 2 # 保持有效 batch_size = 64
-max_epochs: 250
-use_amp: true
+batch_size: 32  # Reduced batch size for better numerical stability
+gradient_accumulation_steps: 4  # Effective batch size = 128
+max_epochs: 150  # Reasonable epochs for convergence
+use_amp: false  # Disable mixed precision to prevent numerical instability
+num_workers: 4  # Parallel data loading for better performance (set to 0 if Windows issues)
 
-# --- Loss Weights ---
-regr_loss_weight: 9.7687
+# --- Loss Weights & Scalers ---
+regr_loss_weight: 0.1  # Fixed weight (used when dynamic is off)
+content_loss_weight: 1.0  # NEW: Weight for token content loss
+length_loss_weight: 0.002  # Conservative fixed weight: 2669*0.002=5.3 vs ~10 content
+use_dynamic_lambda: false  # Temporarily disable to ensure stability
+use_separate_head_lr: true  # Enable different learning rates for heads
+regr_lr_multiplier: 5.0  # Regression head gets 5x higher learning rate
+delta_e_scaler: 100.0 # FIX: Reduced from 1000 to 100 to increase gradient magnitude
 
 # --- Optimizer (AdamW) ---
-lr_base: 0.0001
-lr_min: 0.000001
-weight_decay: 0.015
-grad_clip_norm: 1.0
+lr_base: 0.0005  # Ultra-low learning rate to prevent loss spikes and NaN
+lr_min: 0.00001  # Minimum learning rate (should be lower than base)
+weight_decay: 0.01  # Standard weight decay for regularization
+grad_clip_norm: 1.0  # More aggressive gradient clipping
 
 # --- LR Scheduler ---
-# 建议2: 明确 warm-up steps for scheduler
-warmup_steps: 1000 
+warmup_steps: 200  # Even longer warmup for ultra-stable training 
 
 # --- Callbacks ---
-# 建议3: 减少 early stopping 的耐心值
-early_stop_patience: 30 
-min_delta: 0.001
+early_stop_patience: 30  # Faster early stopping to prevent overfitting
+min_delta: 0.0001
 
 # --- 日志与监控 ---
 use_wandb: false
-log_every: 20
+log_every: 100  # Reduce logging frequency to prevent progress bar spam

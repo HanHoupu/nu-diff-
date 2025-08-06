@@ -1,0 +1,71 @@
+data:
+  batch_size: 64
+  data_subset_ratio: 0.1
+  force_rebuild_vocab: false
+  gradient_accumulation_steps: 2
+  num_workers: 4
+  seed: 412
+  task: SEQ
+  train_frac: 0.8
+  years_range: 2005-2010
+model:
+  content_loss_weight: 1.0
+  d_model: 512
+  delta_e_scaler: 100.0
+  dropout: 0.1
+  ff_dim: 2048
+  grad_clip_norm: 1.0
+  label_smoothing: 0.0
+  length_boost_factor: 1.5
+  length_enhanced_learning: true
+  length_grad_accumulation: 4
+  length_loss_weight: 0.3
+  length_lr_multiplier: 5.0
+  length_warmup_steps: 100
+  lr_base: 0.0003
+  lr_min: 3.0e-05
+  n_decoder_layers: 6
+  n_encoder_layers: 6
+  n_heads: 8
+  regr_loss_weight: 0.1
+  regr_lr_multiplier: 5.0
+  train_head: both
+  use_dynamic_lambda: false
+  use_separate_head_lr: true
+  warmup_steps: 200
+  weight_decay: 0.01
+seed_everything: 412
+trainer:
+  accelerator: auto
+  callbacks:
+  - class_path: src.nucdiff.trainer.lightning_callbacks.NuclearPhysicsDiagnostics
+    init_args:
+      print_frequency: 10
+  - class_path: src.nucdiff.trainer.lightning_callbacks.GradientComponentMonitor
+  - class_path: src.nucdiff.utils.callbacks.CustomProgressBar
+  - class_path: pytorch_lightning.callbacks.ModelSummary
+    init_args:
+      max_depth: 2
+  - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+    init_args:
+      logging_interval: epoch
+  - class_path: pytorch_lightning.callbacks.EarlyStopping
+    init_args:
+      min_delta: 0.0001
+      mode: min
+      monitor: val/loss
+      patience: 30
+  - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      filename: nucdiff-{epoch:02d}-{val_loss:.4f}
+      mode: min
+      monitor: val/loss
+      save_top_k: 3
+  devices: auto
+  enable_checkpointing: true
+  enable_model_summary: true
+  enable_progress_bar: false
+  gradient_clip_val: 1.0
+  log_every_n_steps: 40
+  max_epochs: 70
+  precision: 32

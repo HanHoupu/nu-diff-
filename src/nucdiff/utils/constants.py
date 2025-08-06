@@ -2,6 +2,18 @@
 通用常量模块
 """
 
+# FIXED: Centralized feature column definitions to avoid hardcoding
+ENCODER_FEATURE_COLS = [
+    'Z_int', 'A_int', 'asym', 'delta_magic_z', 'delta_magic_n', 
+    'valence_p', 'valence_n', 'year'
+]
+
+# Extended encoder features (used in some prediction scripts)
+ENCODER_FEATURE_COLS_EXTENDED = [
+    'Z_int', 'A_int', 'asym', 'is_odd_Z', 'is_odd_N',
+    'delta_magic_z', 'delta_magic_n', 'valence_p', 'valence_n', 'year'
+]
+
 ELEMENTS = {
     'H': 1, 'HE': 2, 'LI': 3, 'BE': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'NE': 10,
     'NA': 11, 'MG': 12, 'AL': 13, 'SI': 14, 'P': 15, 'S': 16, 'CL': 17, 'AR': 18, 'K': 19, 'CA': 20,
